@@ -2,196 +2,263 @@
 
 ## Overview
 
-**Automated_BookGen** is a modular, scalable automated book generation system designed to transform a simple book title into a fully compiled manuscript. The system leverages Large Language Models (LLMs), structured workflow automation, and human-in-the-loop review mechanisms to ensure quality, control, and editorial oversight at every stage of content creation.
+**Automated_BookGen** is a modular, automation-first book generation system that transforms a book title and editorial notes into a structured outline, chapter content, and ultimately a compiled manuscript. The system is designed around **human-in-the-loop editorial control**, **stateful workflows**, and **LLM-driven generation**, closely mirroring a real-world publishing pipeline.
 
-The architecture is built around gated workflows, conditional branching, and persistent state management, making it suitable for long-form content generation such as books, reports, and structured publications.
-
----
-
-## 1. Description
-
-Automated_BookGen accepts a book title and editorial notes as input, generates a structured outline, incrementally writes chapters with contextual awareness, and compiles a final draft in standard document formats (.docx, .pdf, or .txt).
-
-Key characteristics of the system include:
-
-* Feedback-driven generation with editor approval gates
-* Chapter-by-chapter context chaining using summaries
-* Persistent storage of outlines, chapters, notes, and summaries
-* Modular design allowing easy extension and replacement of components
-* Automation-first workflow using orchestration tools (e.g., n8n or Python)
-* Support for notifications and pause/resume states
-
-The system is intentionally designed to resemble a real editorial workflow rather than a one-shot AI text generator.
+Unlike one-shot AI writing tools, Automated_BookGen enforces **gated progression**, **context preservation**, and **editorial feedback loops** at every stage of content creation.
 
 ---
 
-## 2. Explanation of System Architecture & Workflow
+## Current Implementation Status (Updated)
+
+As of now, the project has implemented the **core foundation of the system**, including:
+
+* Structured outline generation using an LLM
+* Strict system and user prompts for outline and content generation
+* Persistent storage using SQLite (designed to be Supabase-compatible)
+* Chapter-level data modeling
+* Regeneration-aware notes handling (`before_notes` / `after_notes`)
+* Streamlit-based frontend for outline input and review
+* Per-heading editorial notes capture
+* DOCX export pipeline
+* Email notification integration (Gmail SMTP)
+
+The project is actively evolving toward full end-to-end automation.
+
+---
+
+## 1. What the System Currently Does
+
+### Input & Outline Generation
+
+* Users enter:
+
+  * Book title
+  * Mandatory editorial notes (`before_notes`)
+* An **Outline Generation Agent** produces a structured outline in strict JSON format
+* The outline is rendered in the frontend, chapter by chapter
+* Editors can add **optional notes per chapter** for refinement
+
+### Editorial Control
+
+* Notes are split into:
+
+  * `before_notes` → initial guidance
+  * `after_notes` → regeneration feedback
+* Status flags are used to control workflow progression
+* No step auto-advances without satisfying required conditions
+
+### Data Persistence
+
+* All books and headings are stored in a relational schema
+* Each heading/chapter is stored independently
+* Designed to support:
+
+  * Regeneration
+  * Auditing
+  * Pause/resume workflows
+
+### Content Generation (Foundation Ready)
+
+* A **Content Generation Agent** prompt structure is implemented
+* Each chapter is generated independently
+* Previous chapter summaries are passed as context
+* Output includes both:
+
+  * Full content
+  * A concise summary for chaining
+
+### Export
+
+* All stored chapter content can be compiled into a `.docx` file
+* Ordering is preserved using `heading_number`
+* Output is editor-ready
+
+### Notifications
+
+* Email notifications are integrated via Gmail SMTP
+* Used for:
+
+  * Outline ready
+  * Review required
+  * Workflow completion
+  * Error or pause states
+
+---
+
+## 2. System Architecture & Code Explanation
 
 ### High-Level Flow
 
-1. **Input ingestion** (Title + editorial notes)
-2. **Outline generation** with mandatory pre-notes
-3. **Editorial review and iteration of outline**
-4. **Sequential chapter generation**
-5. **Context preservation using chapter summaries**
-6. **Per-chapter editorial gating**
-7. **Final compilation and export**
-8. **Notifications at each critical checkpoint**
+1. User submits book title and initial notes
+2. Outline is generated and stored
+3. Editor reviews outline and adds notes per chapter
+4. Chapters are generated sequentially with context
+5. Each chapter can be approved or regenerated
+6. Approved chapters are compiled into a final document
+7. Notifications are sent at key checkpoints
 
 ---
 
-### Core Components
+## 3. Code Structure Overview
 
-#### 1. Automation Engine
+### `db_utils.py`
 
-* Orchestrates workflow stages
-* Handles conditional logic, pauses, retries, and branching
-* Tools: n8n / Python scripts
+Responsible for **all database operations**.
 
-#### 2. Database (Supabase)
+Key responsibilities:
 
-Stores:
+* Initialize database schema
+* Create and manage:
 
-* Titles and metadata
-* Outline drafts and revisions
-* Chapter content
-* Chapter summaries (for context chaining)
-* Editorial notes and approval statuses
-* Final output metadata
+  * `books` table
+  * `headings` table
+* Support CRUD operations:
 
-#### 3. LLM Layer
+  * Add/update/delete books
+  * Add/update/delete headings
+* Handle timestamps and status updates
 
-* Generates outlines and chapters
-* Consumes structured prompts with editorial notes and context
-* Can be extended to support multiple providers (OpenAI, Gemini, Anthropic)
+Key design choices:
 
-#### 4. Human-in-the-Loop Controls
-
-* Editors can:
-
-  * Add notes before outline generation
-  * Revise outlines post-generation
-  * Add per-chapter improvement notes
-  * Approve or pause progression at every stage
-
-#### 5. Notification System
-
-* Triggers email or MS Teams alerts when:
-
-  * Outline is ready for review
-  * Chapter feedback is required
-  * Workflow is paused due to missing input
-  * Final draft is compiled
+* `before_notes` and `after_notes` explicitly separated
+* Status-driven workflow control
+* SQLite used for MVP, schema compatible with Supabase/Postgres
 
 ---
 
-### Context Handling (Critical Design Choice)
+### Prompt Definitions
 
-Each chapter generation step includes:
+The system uses **strict prompt contracts** to ensure predictable outputs.
 
-* Summaries of all previous chapters
-* The full outline
-* Chapter-specific editorial notes
+#### Outline Generation Prompts
 
-This ensures:
+* Enforce mandatory editorial notes
+* Output strictly structured JSON
+* Designed for regeneration and review
 
-* Narrative continuity
-* Logical progression
-* Reduced hallucination
-* Consistent tone and scope
+#### Content Generation Prompts
 
----
+* Generate one chapter at a time
+* Consume:
 
-## 3. MVP Phases
-
-### Phase 1 — Foundation & Data Model (MVP Core)
-
-**Goal:** Establish structure, persistence, and basic generation.
-
-* Define Supabase schema:
-
-  * Titles
-  * Outline drafts
-  * Status flags
-* Input ingestion (Google Sheet / Excel / local file)
-* LLM-based outline generation
-* Mandatory `notes_on_outline_before` gate
-* Outline stored for editor review
-* Manual status updates to proceed or pause
-
-**Deliverables:**
-
-* Working outline generation
-* DB schema screenshots
-* Stored outline drafts with status flags
+  * Book title
+  * Current heading
+  * Sub-headings
+  * Previous chapter summaries (dict)
+  * Optional editorial notes
+* Output content + summary for chaining
 
 ---
 
-### Phase 2 — Chapter Generation with Context Chaining
+### Streamlit Frontend (`app.py`)
 
-**Goal:** Enable controlled, sequential chapter writing.
+Provides a **lightweight editorial UI**.
 
-* Generate chapters one at a time from outline
-* Store each chapter independently
-* Generate and store chapter summaries
-* Use cumulative summaries as context for next chapter
-* Editorial gating per chapter:
+Current features:
 
-  * Wait for notes
-  * Regenerate if needed
-  * Pause if input missing
+* Book title and note input
+* Outline generation trigger
+* Outline rendering with expandable chapters
+* Optional per-chapter notes input
+* Session-based state management
 
-**Deliverables:**
+Designed to later support:
 
-* Multi-chapter generation
-* Verified context chaining
-* Chapter-level approval workflow
-
----
-
-### Phase 3 — Final Compilation & Export
-
-**Goal:** Produce a complete, review-ready manuscript.
-
-* Validate all chapters are approved
-* Handle final review notes
-* Compile chapters into:
-
-  * `.docx`
-  * `.txt` (PDF optional)
-* Store final output metadata
-* Trigger completion notification
-
-**Deliverables:**
-
-* Final compiled book file
-* Export pipeline
-* Completion alerts
+* Multi-page navigation
+* Chapter approval buttons
+* Regeneration triggers
+* Authentication
 
 ---
 
-### Phase 4 — (Post-MVP Enhancements)
+### Export Pipeline
 
-**Optional but extensible**
+* Reads all headings from DB
+* Orders them by `heading_number`
+* Writes structured content into a `.docx` file
+* Ready for PDF extension
 
-* Web-based editor UI
-* Source-backed research integration
-* Vector DB for long-context retrieval
-* Version history and diff tracking
-* Multi-language book generation
-* Cost and token usage tracking
+---
+
+### Email Notifications
+
+* Implemented using Gmail SMTP with App Passwords
+* Triggered programmatically
+* Easily extendable to MS Teams or Slack
+
+---
+
+## 4. Why the Design Matters
+
+This system intentionally avoids:
+
+* Stateless generation
+* One-shot prompts
+* Hardcoded flows
+
+Instead, it prioritizes:
+
+* Editorial realism
+* Deterministic workflows
+* Auditability
+* Regeneration safety
+* Long-form consistency
+
+This makes it suitable for:
+
+* Publishing pipelines
+* Enterprise documentation
+* Knowledge products
+* Research reports
+* AI-assisted editorial teams
+
+---
+
+## 5. Updated MVP Phases
+
+### Phase 1 — Foundation (Completed)
+
+* Prompt architecture
+* Outline generation
+* DB schema
+* Frontend input
+* DOCX export
+* Email notifications
+
+### Phase 2 — Chapter Generation (In Progress)
+
+* Sequential chapter generation
+* Context chaining via summaries
+* Per-chapter regeneration
+* Status-based locking
+
+### Phase 3 — Full Compilation & Review
+
+* Final review gates
+* End-to-end automation
+* Versioned exports
+
+### Phase 4 — Post-MVP Enhancements
+
+* Web editor UI
+* Source-backed research
+* Vector DB for long context
+* Multi-language support
+* Cost and usage tracking
 
 ---
 
 ## Summary
 
-Automated_BookGen is designed as an **editorial automation system**, not just an AI writer. Its strength lies in:
+**Automated_BookGen** is not just an AI writing tool—it is an **editorial automation system**.
+
+Its strengths lie in:
 
 * Structured workflows
 * Human oversight
 * Context-aware generation
 * Production-grade extensibility
 
-This makes it suitable for real-world publishing pipelines, enterprise documentation, and scalable content automation platforms.
+The current implementation establishes a solid, extensible foundation and demonstrates a clear path toward a full-scale automated publishing platform.
 
 ---
